@@ -1,0 +1,16 @@
+- create a baseline model (normal machine learning model)
+- finetuning (k-fold)
+- need to have a activation function (soft-max is okay)
+- sigmoid only for binary case
+
+- k-fold why?
+- Divided and evaluated as an average. Cannot select one model for usage.
+- At some point all data are used for training and testing.
+- More realistic for the actual performance.
+
+- have five confusion matrix but aggregate them into one (in the form of percentage or ratio)
+
+- removed word "study"
+- astronomy: 157
+- psychology: 407
+- sociology: 332
