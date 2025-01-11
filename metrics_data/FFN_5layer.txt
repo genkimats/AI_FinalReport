@@ -1,0 +1,57 @@
+Fold 1 Confusion Matrix (Counts):
+[[59  1  0]
+ [ 0 55  5]
+ [ 0 33 27]]
+Fold 1 Confusion Matrix (Ratios):
+[[0.98333333 0.01666667 0.        ]
+ [0.         0.91666667 0.08333333]
+ [0.         0.55       0.45      ]]
+
+Fold 2 Confusion Matrix (Counts):
+[[59  0  1]
+ [ 0 24 35]
+ [ 0  3 57]]
+Fold 2 Confusion Matrix (Ratios):
+[[0.98333333 0.         0.01666667]
+ [0.         0.40677966 0.59322034]
+ [0.         0.05       0.95      ]]
+
+Fold 3 Confusion Matrix (Counts):
+[[60  0  0]
+ [ 0 32 27]
+ [ 0  3 57]]
+Fold 3 Confusion Matrix (Ratios):
+[[1.         0.         0.        ]
+ [0.         0.54237288 0.45762712]
+ [0.         0.05       0.95      ]]
+
+Fold 4 Confusion Matrix (Counts):
+[[60  0  0]
+ [ 1 45 13]
+ [ 0 12 48]]
+Fold 4 Confusion Matrix (Ratios):
+[[1.         0.         0.        ]
+ [0.01694915 0.76271186 0.22033898]
+ [0.         0.2        0.8       ]]
+
+Fold 5 Confusion Matrix (Counts):
+[[59  0  1]
+ [ 0 44 15]
+ [ 0 20 40]]
+Fold 5 Confusion Matrix (Ratios):
+[[0.98333333 0.         0.01666667]
+ [0.         0.74576271 0.25423729]
+ [0.         0.33333333 0.66666667]]
+
+Average Metrics:
+{'accuracy': np.float64(0.8102979515828679), 'precision': np.float64(0.8345418658278201), 'recall': np.float64(0.8093973634651601), 'f1_score': np.float64(0.8027896759100953)}
+
+Average Confusion Matrix (Counts):
+[[297   1   2]
+ [  1 200  95]
+ [  0  71 229]]
+
+Average Confusion Matrix (Ratios):
+[[0.99       0.00333333 0.00666667]
+ [0.00337838 0.67567568 0.32094595]
+ [0.         0.23666667 0.76333333]]

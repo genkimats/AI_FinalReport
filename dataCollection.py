@@ -37,7 +37,7 @@ for input_file in input_files:
                 print(f"{count} of {input_file}: {url}")
                 content = scrape_content(url)
                 if content:
-                    outfile.write(f"URL: {url}\n\n{content}\n{'-'*80}\n")
+                    outfile.write(content)
 
     print(f"Scraped content saved to {output_file}\n")
 
