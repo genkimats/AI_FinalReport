@@ -4,7 +4,7 @@ import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import StratifiedKFold
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 import joblib
 
@@ -99,7 +99,7 @@ def train_and_evaluate(texts, labels, k=5):
         y_train, y_val = y[train_idx], y[val_idx]
 
         # Vectorize within the fold
-        vectorizer = TfidfVectorizer(max_features=5000)
+        vectorizer = CountVectorizer(max_features=5000)
         X_train = vectorizer.fit_transform(train_texts).toarray()
         X_val = vectorizer.transform(val_texts).toarray()
 
@@ -111,8 +111,8 @@ def train_and_evaluate(texts, labels, k=5):
 
         # Hyperparameter tuning
         param_grid = [
-            {'lr': 0.001, 'batch_size': 32, 'epochs': 20},
-            {'lr': 0.001, 'batch_size': 64, 'epochs': 20},
+            {'lr': 0.001, 'batch_size': 20, 'epochs': 10},
+            {'lr': 0.001, 'batch_size': 10, 'epochs': 10},
         ]
         best_model, best_score, best_params = hyperparameter_tuning(
             param_grid, X_train_tensor, y_train_tensor, X_val_tensor, y_val_tensor, X_train.shape[1]
@@ -156,7 +156,7 @@ def train_and_evaluate(texts, labels, k=5):
 
 # Main
 if __name__ == "__main__":
-    folder = "abstracts_lemmatized"
+    folder = "abstracts_stemming"
     texts, labels = load_data(folder)
 
     avg_metrics, avg_conf_matrix, avg_normalized_conf_matrix = train_and_evaluate(texts, labels, k=5)

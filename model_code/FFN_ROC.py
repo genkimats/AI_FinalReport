@@ -5,7 +5,8 @@ from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import StratifiedKFold
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, roc_curve, auc
+import matplotlib.pyplot as plt
 import joblib
 
 # Load data
@@ -82,6 +83,35 @@ def hyperparameter_tuning(param_grid, X_train, y_train, X_val, y_val, input_dim)
     print(f"Best params: {best_params}, Best accuracy: {best_score:.4f}")
     return best_model, best_score, best_params
 
+# ROC Curve Evaluation
+def evaluate_with_roc(model, X_val_tensor, y_val):
+    model.eval()
+    with torch.no_grad():
+        val_outputs = model(X_val_tensor)
+        val_probs = torch.softmax(val_outputs, dim=1).numpy()
+
+    # Compute ROC and AUC for each class
+    fpr, tpr, roc_auc = {}, {}, {}
+    for i in range(val_probs.shape[1]):
+        fpr[i], tpr[i], _ = roc_curve((y_val == i).astype(int), val_probs[:, i])
+        roc_auc[i] = auc(fpr[i], tpr[i])
+
+    # Plot the ROC curve
+    plt.figure(figsize=(10, 8))
+    for i in range(len(fpr)):
+        plt.plot(fpr[i], tpr[i], label=f"Class {i} (AUC = {roc_auc[i]:.2f})")
+    plt.plot([0, 1], [0, 1], 'k--', label="Random Guess")
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC) Curve')
+    plt.legend(loc="lower right")
+    plt.grid()
+    plt.show()
+
+    return roc_auc
+
 # Training and evaluation
 def train_and_evaluate(texts, labels, k=5):
     y = np.array(labels)
@@ -139,6 +169,10 @@ def train_and_evaluate(texts, labels, k=5):
 
         print(f"Fold {fold} Confusion Matrix (Counts):\n{conf_matrix}")
         print(f"Fold {fold} Confusion Matrix (Ratios):\n{normalized_conf_matrix}\n")
+
+        # Evaluate with ROC
+        roc_auc = evaluate_with_roc(best_model, X_val_tensor, y_val)
+        print(f"Fold {fold} AUCs: {roc_auc}")
 
     # Average metrics
     avg_metrics = {k: np.mean([m[k] for m in metrics]) for k in metrics[0]}
