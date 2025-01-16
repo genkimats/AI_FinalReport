@@ -1,99 +1,197 @@
-"""
-Random forest
-
-Cross-Validation Accuracy: 0.7967 ± 0.0218
-Accuracy: 0.7833
-Precision: 0.7869
-Recall: 0.7833
-F1-Score: 0.7797
-Confusion Matrix (Ratio):
-[[0.98333333 0.         0.01666667]
- [0.05970149 0.64179104 0.29850746]
- [0.0754717  0.18867925 0.73584906]]
-Saved model as random_forest_model.pkl and vectorizer as random_forest_vectorizer.pkl.
-"""
-
 import os
-import re
 import numpy as np
-import pandas as pd
+import torch
+from torch import nn, optim
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.model_selection import StratifiedKFold
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score, train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
-import pickle
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+import torch.nn.functional as F
 
 # Load data
-def load_data(folder_path):
-    data = []
-    labels = []
-    for file_name, label in zip(["astronomy.txt", "psychology.txt", "sociology.txt"], ["Astronomy", "Psychology", "Sociology"]):
-        file_path = os.path.join(folder_path, file_name)
-        with open(file_path, 'r', encoding='utf-8') as file:
-            abstracts = file.read().strip().split('\n')
-            data.extend(abstracts)
-            labels.extend([label] * len(abstracts))
-    return data, labels
+def load_data(folder):
+    categories = ['astronomy', 'sociology', 'psychology']
+    texts, labels = [], []
+    for i, category in enumerate(categories):
+        file_path = os.path.join(folder, f"processed_{category}.txt")
+        with open(file_path, 'r', encoding='utf-8') as f:
+            abstracts = f.read().split('\n')
+            texts.extend(abstracts)
+            labels.extend([i] * len(abstracts))
+    return texts, labels
 
-# Preprocess text
-def preprocess_text(text):
-    text = re.sub(r'[^a-zA-Z\s]', '', text)
-    text = text.lower()
-    return text
+# Feedforward Neural Network
+class FeedforwardNN(nn.Module):
+    def __init__(self, input_dim):
+        super(FeedforwardNN, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 256)
+        self.bn1 = nn.BatchNorm1d(256)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(0.3)
 
-# Load and preprocess data
-folder_path = "abstracts"
-data, labels = load_data(folder_path)
-data = [preprocess_text(text) for text in data]
+        self.fc2 = nn.Linear(256, 128)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.relu2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(0.3)
 
-# Convert to DataFrame
-df = pd.DataFrame({"text": data, "label": labels})
+        self.fc3 = nn.Linear(128, 64)
+        self.bn3 = nn.BatchNorm1d(64)
+        self.relu3 = nn.ReLU()
 
-# Feature extraction using TF-IDF
-vectorizer = TfidfVectorizer(max_features=5000)
-X = vectorizer.fit_transform(df["text"]).toarray()
-y = df["label"]
+        self.fc4 = nn.Linear(64, 3)
 
-# Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.bn1(x)
+        x = self.relu1(x)
+        x = self.dropout1(x)
 
-# Train Random Forest model
-model = RandomForestClassifier(random_state=42)
-model.fit(X_train, y_train)
+        x = self.fc2(x)
+        x = self.bn2(x)
+        x = self.relu2(x)
+        x = self.dropout2(x)
 
-# Cross-validation scores
-cv_scores = cross_val_score(model, X, y, cv=5, scoring='accuracy')
-print(f"Cross-Validation Accuracy: {np.mean(cv_scores):.4f} \u00b1 {np.std(cv_scores):.4f}")
+        x = self.fc3(x)
+        x = self.bn3(x)
+        x = self.relu3(x)
 
-# Predictions
-y_pred = model.predict(X_test)
+        x = self.fc4(x)
+        x = F.softmax(x, dim=1)  # Apply softmax to output logits across class dimension
+        return x
 
-# Evaluation metrics
-accuracy = accuracy_score(y_test, y_pred)
-precision = precision_score(y_test, y_pred, average='weighted')
-recall = recall_score(y_test, y_pred, average='weighted')
-f1 = f1_score(y_test, y_pred, average='weighted')
+# Training function
+def train_model(hyperparams, X_train, y_train, X_val, y_val, input_dim):
+    model = FeedforwardNN(input_dim)
+    optimizer = optim.Adam(model.parameters(), lr=hyperparams['lr'])
+    criterion = nn.CrossEntropyLoss()
 
-print(f"Accuracy: {accuracy:.4f}")
-print(f"Precision: {precision:.4f}")
-print(f"Recall: {recall:.4f}")
-print(f"F1-Score: {f1:.4f}")
+    train_data = TensorDataset(X_train, y_train)
+    train_loader = DataLoader(train_data, batch_size=hyperparams['batch_size'], shuffle=True)
 
-# Confusion matrix
-cm = confusion_matrix(y_test, y_pred, labels=["Astronomy", "Psychology", "Sociology"])
-cm_ratio = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]  # Normalize by row (true class)
+    for epoch in range(hyperparams['epochs']):
+        model.train()
+        total_loss = 0
+        for batch_X, batch_y in train_loader:
+            optimizer.zero_grad()
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
 
-print("Confusion Matrix (Ratio):")
-print(cm_ratio)
+        print(f"Epoch {epoch + 1}/{hyperparams['epochs']} - Loss: {total_loss:.4f}")
 
-# Save the model
-model_file = "models/random_forest_model.pkl"
-with open(model_file, 'wb') as f:
-    pickle.dump(model, f)
+    return model
 
-# Save the vectorizer
-vectorizer_file = "models/random_forest_vectorizer.pkl"
-with open(vectorizer_file, 'wb') as f:
-    pickle.dump(vectorizer, f)
+# Training and evaluation
+def train_and_evaluate(texts, labels, k=5):
+    y = np.array(labels)
+    skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
 
-print(f"Saved model as {model_file} and vectorizer as {vectorizer_file}.")
+    class_labels = ['Astronomy', 'Sociology', 'Psychology']
+    metrics = []
+    confusion_matrices = []
+
+    hyperparams = {
+        'lr': 0.05,
+        'batch_size': 32,
+        'epochs': 20
+    }
+
+    for fold, (train_idx, val_idx) in enumerate(skf.split(texts, y), 1):
+        print(f"Fold {fold}/{k}")
+
+        # Split the data
+        train_texts = [texts[i] for i in train_idx]
+        val_texts = [texts[i] for i in val_idx]
+        y_train, y_val = y[train_idx], y[val_idx]
+
+        # Vectorize within the fold
+        vectorizer = TfidfVectorizer(max_features=5000)
+        X_train = vectorizer.fit_transform(train_texts).toarray()
+        X_val = vectorizer.transform(val_texts).toarray()
+
+        # Convert to tensors
+        X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+        y_train_tensor = torch.tensor(y_train, dtype=torch.long)
+        X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
+        y_val_tensor = torch.tensor(y_val, dtype=torch.long)
+
+        # Train model
+        best_model = train_model(hyperparams, X_train_tensor, y_train_tensor, X_val_tensor, y_val_tensor, X_train.shape[1])
+
+        # Final Evaluation
+        best_model.eval()
+        with torch.no_grad():
+            val_outputs = best_model(X_val_tensor)
+            val_preds = torch.argmax(val_outputs, axis=1).numpy()
+
+        acc = accuracy_score(y_val, val_preds)
+        report = classification_report(y_val, val_preds, target_names=class_labels, output_dict=True, zero_division=0)
+
+        # Print per-class metrics for this fold
+        print(f"Fold {fold} Class-wise Metrics:")
+        for label in class_labels:
+            precision = report[label]['precision']
+            recall = report[label]['recall']
+            f1_score = report[label]['f1-score']
+            print(f"  {label}: Precision={precision:.4f}, Recall={recall:.4f}, F1-Score={f1_score:.4f}")
+        print()
+
+        metrics.append({
+            "accuracy": acc,
+            "precision": report['weighted avg']['precision'],
+            "recall": report['weighted avg']['recall'],
+            "f1_score": report['weighted avg']['f1-score']
+        })
+
+        conf_matrix = confusion_matrix(y_val, val_preds)
+        confusion_matrices.append(conf_matrix)
+
+    # Aggregate confusion matrix
+    aggregated_conf_matrix = sum(confusion_matrices)
+    normalized_conf_matrix = aggregated_conf_matrix / aggregated_conf_matrix.sum(axis=1, keepdims=True)
+
+    avg_metrics = {k: np.mean([m[k] for m in metrics]) for k in metrics[0]}
+    std_metrics = {k: np.std([m[k] for m in metrics]) for k in metrics[0]}
+
+    print(f"\nCross-Validation Accuracy: {avg_metrics['accuracy']:.4f} ± {std_metrics['accuracy']:.4f}")
+    print(f"Overall Precision (weighted): {avg_metrics['precision']:.4f}")
+    print(f"Overall Recall (weighted): {avg_metrics['recall']:.4f}")
+    print(f"Overall F1-Score (weighted): {avg_metrics['f1_score']:.4f}")
+
+    print("\nClass-wise Metrics:")
+    avg_report = classification_report(
+        y,
+        np.concatenate([
+            torch.argmax(best_model(torch.tensor(vectorizer.transform([texts[i] for i in val_idx]).toarray(), dtype=torch.float32)), axis=1).numpy()
+            for _, val_idx in skf.split(texts, y)
+        ]),
+        target_names=class_labels,
+        output_dict=True,
+        zero_division=0
+    )
+    for label in class_labels:
+        print(f"{label}:")
+        print(f"  Precision: {avg_report[label]['precision']:.4f}")
+        print(f"  Recall: {avg_report[label]['recall']:.4f}")
+        print(f"  F1-Score: {avg_report[label]['f1-score']:.4f}")
+
+    print("\nAggregated Confusion Matrix (Counts):")
+    for i, label in enumerate(class_labels):
+        print(f"{label}: {aggregated_conf_matrix[i]}")
+
+    print("\nNormalized Confusion Matrix (Ratios):")
+    print("          Astr  Psyc  Soci")
+    for i, label in enumerate(class_labels):
+        row = ' '.join([f"{x:.4f}" for x in normalized_conf_matrix[i]])
+        print(f"{label[:4]}   {row}")
+
+    return avg_metrics
+
+# Main
+if __name__ == "__main__":
+    folder = "abstracts_processed_1000"
+    texts, labels = load_data(folder)
+
+    avg_metrics = train_and_evaluate(texts, labels, k=5)

@@ -24,10 +24,10 @@ def load_data(folder):
 class FeedforwardNN(nn.Module):
     def __init__(self, input_dim):
         super(FeedforwardNN, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 128)
+        self.fc1 = nn.Linear(input_dim, 256)
         self.relu = nn.Sigmoid()
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 3)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 3)
 
     def forward(self, x):
         x = self.fc1(x)
@@ -99,7 +99,7 @@ def train_and_evaluate(texts, labels, k=5):
         y_train, y_val = y[train_idx], y[val_idx]
 
         # Vectorize within the fold
-        vectorizer = TfidfVectorizer(max_features=5000)
+        vectorizer = TfidfVectorizer(max_features=2048)
         X_train = vectorizer.fit_transform(train_texts).toarray()
         X_val = vectorizer.transform(val_texts).toarray()
 
@@ -156,7 +156,7 @@ def train_and_evaluate(texts, labels, k=5):
 
 # Main
 if __name__ == "__main__":
-    folder = "abstracts_lemmatized"
+    folder = "abstracts_lemmatization"
     texts, labels = load_data(folder)
 
     avg_metrics, avg_conf_matrix, avg_normalized_conf_matrix = train_and_evaluate(texts, labels, k=5)

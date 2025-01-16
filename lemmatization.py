@@ -66,8 +66,8 @@ def process_text_file(input_file, output_file, mode="lemmatize"):
 # Replace 'input.txt' with the path to your input file
 # Replace 'output.txt' with the path to your desired output file
 # Use mode="stem" for stemming or mode="lemmatize" for lemmatization
-input_directory = 'abstracts_processed/'
+input_directory = 'scraped_data_1000'
 input_files = ['psychology.txt', 'sociology.txt', 'astronomy.txt']
-output_directory = 'abstracts_lemmatized/'
+output_directory = 'abstracts_processed_1000'
 for file in os.listdir(input_directory):
-    process_text_file(input_directory+file, output_directory+file, mode="lemmatize")
+    process_text_file(f"{input_directory}/{file}", f"{output_directory}/processed_{file}", mode="lemmatize")
