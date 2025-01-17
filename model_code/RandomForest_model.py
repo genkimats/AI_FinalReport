@@ -1,197 +1,130 @@
 import os
 import numpy as np
-import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader, TensorDataset
-from sklearn.model_selection import StratifiedKFold
+import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
-import torch.nn.functional as F
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, precision_recall_fscore_support
+import pickle
 
 # Load data
-def load_data(folder):
-    categories = ['astronomy', 'sociology', 'psychology']
-    texts, labels = [], []
-    for i, category in enumerate(categories):
-        file_path = os.path.join(folder, f"processed_{category}.txt")
-        with open(file_path, 'r', encoding='utf-8') as f:
-            abstracts = f.read().split('\n')
-            texts.extend(abstracts)
-            labels.extend([i] * len(abstracts))
-    return texts, labels
+def load_data(folder_path):
+    data = []
+    labels = []
+    for file_name, label in zip(["processed_astronomy.txt", "processed_psychology.txt", "processed_sociology.txt"], ["Astronomy", "Psychology", "Sociology"]):
+        file_path = os.path.join(folder_path, file_name)
+        with open(file_path, 'r', encoding='utf-8') as file:
+            abstracts = file.read().strip().split('\n')
+            data.extend(abstracts)
+            labels.extend([label] * len(abstracts))
+    return data, labels
 
-# Feedforward Neural Network
-class FeedforwardNN(nn.Module):
-    def __init__(self, input_dim):
-        super(FeedforwardNN, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 256)
-        self.bn1 = nn.BatchNorm1d(256)
-        self.relu1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(0.3)
+# Load and preprocess data
+folder_path = "abstracts_processed_1000"
+data, labels = load_data(folder_path)
 
-        self.fc2 = nn.Linear(256, 128)
-        self.bn2 = nn.BatchNorm1d(128)
-        self.relu2 = nn.ReLU()
-        self.dropout2 = nn.Dropout(0.3)
+# Convert to DataFrame
+df = pd.DataFrame({"text": data, "label": labels})
+y = np.array(df["label"])
 
-        self.fc3 = nn.Linear(128, 64)
-        self.bn3 = nn.BatchNorm1d(64)
-        self.relu3 = nn.ReLU()
+# Manual Stratified K-Fold Cross-Validation
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+aggregated_confusion_matrix = np.zeros((3, 3))  # 3 classes: Astronomy, Psychology, Sociology
+fold_accuracies = []
+fold_precisions = []
+fold_recalls = []
+fold_f1s = []
 
-        self.fc4 = nn.Linear(64, 3)
+class_labels = ["Astronomy", "Psychology", "Sociology"]
 
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = self.relu1(x)
-        x = self.dropout1(x)
+all_test_labels = []
+all_predictions = []
 
-        x = self.fc2(x)
-        x = self.bn2(x)
-        x = self.relu2(x)
-        x = self.dropout2(x)
+for train_index, test_index in skf.split(df["text"], y):
+    # Split data into training and testing
+    X_train_text = df["text"].iloc[train_index]
+    X_test_text = df["text"].iloc[test_index]
+    y_train = y[train_index]
+    y_test = y[test_index]
+    
+    # Fit vectorizer on training data only
+    vectorizer = TfidfVectorizer(max_features=5000)
+    X_train = vectorizer.fit_transform(X_train_text).toarray()
+    X_test = vectorizer.transform(X_test_text).toarray()
+    
+    # Train Random Forest model
+    model = RandomForestClassifier(random_state=42, n_estimators=300, max_depth=80, min_samples_split=5)
+    model.fit(X_train, y_train)
+    
+    # Predictions
+    y_pred = model.predict(X_test)
+    
+    # Store predictions and true labels for overall metrics
+    all_test_labels.extend(y_test)
+    all_predictions.extend(y_pred)
+    
+    # Compute confusion matrix for this fold and add to aggregated matrix
+    cm = confusion_matrix(y_test, y_pred, labels=class_labels)
+    aggregated_confusion_matrix += cm
+    
+    # Compute metrics for this fold
+    fold_accuracies.append(accuracy_score(y_test, y_pred))
+    fold_precisions.append(precision_score(y_test, y_pred, average='weighted'))
+    fold_recalls.append(recall_score(y_test, y_pred, average='weighted'))
+    fold_f1s.append(f1_score(y_test, y_pred, average='weighted'))
 
-        x = self.fc3(x)
-        x = self.bn3(x)
-        x = self.relu3(x)
+# Average metrics across folds
+avg_accuracy = np.mean(fold_accuracies)
+avg_precision = np.mean(fold_precisions)
+avg_recall = np.mean(fold_recalls)
+avg_f1 = np.mean(fold_f1s)
 
-        x = self.fc4(x)
-        x = F.softmax(x, dim=1)  # Apply softmax to output logits across class dimension
-        return x
+# Class-wise metrics across all folds
+class_precisions, class_recalls, class_f1s, _ = precision_recall_fscore_support(
+    all_test_labels, all_predictions, labels=class_labels
+)
 
-# Training function
-def train_model(hyperparams, X_train, y_train, X_val, y_val, input_dim):
-    model = FeedforwardNN(input_dim)
-    optimizer = optim.Adam(model.parameters(), lr=hyperparams['lr'])
-    criterion = nn.CrossEntropyLoss()
+# Normalize the aggregated confusion matrix (row-wise)
+normalized_cm = aggregated_confusion_matrix.astype('float') / aggregated_confusion_matrix.sum(axis=1)[:, np.newaxis]
 
-    train_data = TensorDataset(X_train, y_train)
-    train_loader = DataLoader(train_data, batch_size=hyperparams['batch_size'], shuffle=True)
+# Print overall metrics
+print(f"Cross-Validation Accuracy: {avg_accuracy:.4f} ± {np.std(fold_accuracies):.4f}")
+print(f"Overall Precision (weighted): {avg_precision:.4f}")
+print(f"Overall Recall (weighted): {avg_recall:.4f}")
+print(f"Overall F1-Score (weighted): {avg_f1:.4f}")
 
-    for epoch in range(hyperparams['epochs']):
-        model.train()
-        total_loss = 0
-        for batch_X, batch_y in train_loader:
-            optimizer.zero_grad()
-            outputs = model(batch_X)
-            loss = criterion(outputs, batch_y)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
+# Print class-wise metrics
+print("\nClass-wise Metrics:")
+for label, precision, recall, f1 in zip(class_labels, class_precisions, class_recalls, class_f1s):
+    print(f"{label}:")
+    print(f"  Precision: {precision:.4f}")
+    print(f"  Recall: {recall:.4f}")
+    print(f"  F1-Score: {f1:.4f}")
 
-        print(f"Epoch {epoch + 1}/{hyperparams['epochs']} - Loss: {total_loss:.4f}")
+# Print confusion matrix
+print("\nAggregated Confusion Matrix (Counts):")
+for row, label in zip(aggregated_confusion_matrix, class_labels):
+    print(f"{label}: {row}")
 
-    return model
+print("\nNormalized Confusion Matrix (Ratios):")
+print("          " + "  ".join(f"{label[:4]}" for label in class_labels))  # Shortened class labels for formatting
+for row, label in zip(normalized_cm, class_labels):
+    print(f"{label[:4]}   " + "  ".join(f"{val:.4f}" for val in row))
 
-# Training and evaluation
-def train_and_evaluate(texts, labels, k=5):
-    y = np.array(labels)
-    skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
+# Train final model on full training data and save
+vectorizer = TfidfVectorizer(max_features=5000)
+X = vectorizer.fit_transform(df["text"]).toarray()
+final_model = RandomForestClassifier(random_state=42, n_estimators=100, max_depth=50, min_samples_split=5)
+final_model.fit(X, y)
 
-    class_labels = ['Astronomy', 'Sociology', 'Psychology']
-    metrics = []
-    confusion_matrices = []
+# Save the model
+model_file = "models/random_forest_model.pkl"
+with open(model_file, 'wb') as f:
+    pickle.dump(final_model, f)
 
-    hyperparams = {
-        'lr': 0.05,
-        'batch_size': 32,
-        'epochs': 20
-    }
+# Save the vectorizer
+vectorizer_file = "models/random_forest_vectorizer.pkl"
+with open(vectorizer_file, 'wb') as f:
+    pickle.dump(vectorizer, f)
 
-    for fold, (train_idx, val_idx) in enumerate(skf.split(texts, y), 1):
-        print(f"Fold {fold}/{k}")
-
-        # Split the data
-        train_texts = [texts[i] for i in train_idx]
-        val_texts = [texts[i] for i in val_idx]
-        y_train, y_val = y[train_idx], y[val_idx]
-
-        # Vectorize within the fold
-        vectorizer = TfidfVectorizer(max_features=5000)
-        X_train = vectorizer.fit_transform(train_texts).toarray()
-        X_val = vectorizer.transform(val_texts).toarray()
-
-        # Convert to tensors
-        X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
-        y_train_tensor = torch.tensor(y_train, dtype=torch.long)
-        X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
-        y_val_tensor = torch.tensor(y_val, dtype=torch.long)
-
-        # Train model
-        best_model = train_model(hyperparams, X_train_tensor, y_train_tensor, X_val_tensor, y_val_tensor, X_train.shape[1])
-
-        # Final Evaluation
-        best_model.eval()
-        with torch.no_grad():
-            val_outputs = best_model(X_val_tensor)
-            val_preds = torch.argmax(val_outputs, axis=1).numpy()
-
-        acc = accuracy_score(y_val, val_preds)
-        report = classification_report(y_val, val_preds, target_names=class_labels, output_dict=True, zero_division=0)
-
-        # Print per-class metrics for this fold
-        print(f"Fold {fold} Class-wise Metrics:")
-        for label in class_labels:
-            precision = report[label]['precision']
-            recall = report[label]['recall']
-            f1_score = report[label]['f1-score']
-            print(f"  {label}: Precision={precision:.4f}, Recall={recall:.4f}, F1-Score={f1_score:.4f}")
-        print()
-
-        metrics.append({
-            "accuracy": acc,
-            "precision": report['weighted avg']['precision'],
-            "recall": report['weighted avg']['recall'],
-            "f1_score": report['weighted avg']['f1-score']
-        })
-
-        conf_matrix = confusion_matrix(y_val, val_preds)
-        confusion_matrices.append(conf_matrix)
-
-    # Aggregate confusion matrix
-    aggregated_conf_matrix = sum(confusion_matrices)
-    normalized_conf_matrix = aggregated_conf_matrix / aggregated_conf_matrix.sum(axis=1, keepdims=True)
-
-    avg_metrics = {k: np.mean([m[k] for m in metrics]) for k in metrics[0]}
-    std_metrics = {k: np.std([m[k] for m in metrics]) for k in metrics[0]}
-
-    print(f"\nCross-Validation Accuracy: {avg_metrics['accuracy']:.4f} ± {std_metrics['accuracy']:.4f}")
-    print(f"Overall Precision (weighted): {avg_metrics['precision']:.4f}")
-    print(f"Overall Recall (weighted): {avg_metrics['recall']:.4f}")
-    print(f"Overall F1-Score (weighted): {avg_metrics['f1_score']:.4f}")
-
-    print("\nClass-wise Metrics:")
-    avg_report = classification_report(
-        y,
-        np.concatenate([
-            torch.argmax(best_model(torch.tensor(vectorizer.transform([texts[i] for i in val_idx]).toarray(), dtype=torch.float32)), axis=1).numpy()
-            for _, val_idx in skf.split(texts, y)
-        ]),
-        target_names=class_labels,
-        output_dict=True,
-        zero_division=0
-    )
-    for label in class_labels:
-        print(f"{label}:")
-        print(f"  Precision: {avg_report[label]['precision']:.4f}")
-        print(f"  Recall: {avg_report[label]['recall']:.4f}")
-        print(f"  F1-Score: {avg_report[label]['f1-score']:.4f}")
-
-    print("\nAggregated Confusion Matrix (Counts):")
-    for i, label in enumerate(class_labels):
-        print(f"{label}: {aggregated_conf_matrix[i]}")
-
-    print("\nNormalized Confusion Matrix (Ratios):")
-    print("          Astr  Psyc  Soci")
-    for i, label in enumerate(class_labels):
-        row = ' '.join([f"{x:.4f}" for x in normalized_conf_matrix[i]])
-        print(f"{label[:4]}   {row}")
-
-    return avg_metrics
-
-# Main
-if __name__ == "__main__":
-    folder = "abstracts_processed_1000"
-    texts, labels = load_data(folder)
-
-    avg_metrics = train_and_evaluate(texts, labels, k=5)
+print(f"Saved model as {model_file} and vectorizer as {vectorizer_file}.")
